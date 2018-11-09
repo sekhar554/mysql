@@ -1,0 +1,47 @@
+In this post, I am sharing a small demonstration on how to perform case-sensitive string comparison in MySQL.
+
+For example, if you are searching string with LIKE ‘a%’, also you get all records of LIKE ‘A%’ – the reason is the case-insensitive comparison.
+By default, string comparisons are case insensitive because strings are non-binary. For the case-sensitive comparison, we should use binary collation.
+
+If you need case-sensitive string comparison, you should use this COLLATION latin1_bin.
+
+You can visit this article about, How to change default COLLATION in MySQL. 
+
+The String Case Sensitive Comparison using LIKE BINARY:
+
+You can also perform string case-sensitive comparison using LIKE BINARY operator.
+Generally, we need for password comparison.
+
+Below is a full demonstration on this:
+
+Create a sample table and data:
+CREATE TABLE tbl_Students
+(
+    StudentID INT AUTO_INCREMENT
+    ,StudentName VARCHAR(255)
+    ,CONSTRAINT pk_tbl_Students_StudentID PRIMARY KEY (StudentID)
+);
+ 
+INSERT INTO tbl_Students (StudentName) 
+VALUES ('Anvesh'),('Roy'),('martin'),('Loris'),('Jenny');
+
+Execute below three queries and check the result:
+Using normal LIKE you will get Case insensitive result and using LIKE BINARY you will get the Case sensitive result.
+
+SELECT 
+    StudentID
+    ,StudentName
+FROM tbl_Students WHERE StudentName LIKE 'roy';
+-- Return one record of Student 'Roy'
+ 
+SELECT 
+    StudentID
+    ,StudentName
+FROM tbl_Students WHERE StudentName LIKE BINARY 'roy';
+-- No record for Student 'roy' because this is case sensitive check,'roy' and 'Roy' both are different. 
+ 
+SELECT 
+    StudentID
+    ,StudentName
+FROM tbl_Students WHERE StudentName LIKE BINARY 'Roy';
+-- Return one record of Student 'Roy'

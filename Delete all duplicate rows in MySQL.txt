@@ -1,0 +1,95 @@
+In this post, I am sharing a demonstration on how to remove all rows except for one in MySQL.
+
+Before a few days ago, I was working in one of our production reports and found that there are a lot of duplicate records.
+
+This table has more than 2,00,00,000 records and I removed duplicate based upon two varchar column and required to store one record for each group.
+
+I prepared a demo with a different solution because I have also to take care of performance.
+
+The Solutions are:
+
+Using Self – Join to check every next row with current row and create a delete flag for duplicate rows.
+Swapping of the table – copy unique records in the temp table and restore back to the original table after deleting of duplicate records.
+
+But this didn’t work for me because this solution requires a massive amount of DML operation which will degrade performance.
+
+After some research, I found that MySQL has a feature called ALTER IGNORE.
+Using ALTER IGNORE, you can apply unique key on those columns which required for removing duplicates. Once you execute this DDL command, it creates a unique key constraint and removes all duplicate records from the database.
+
+This is an excellent option in MySQL and also worked for me.
+
+Let me demonstrate this:
+
+First, create demo table and data for varchar datatype:
+CREATE DATABASE Employee;
+ 
+CREATE TABLE Employee.tbl_DuplicateEmployee_VarcharDatatype
+(
+     EmpID INTEGER
+    ,EmpName VARCHAR(250)
+);
+ 
+INSERT INTO Employee.tbl_DuplicateEmployee_VarcharDatatype 
+VALUES
+(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR');
+
+SET old ALTER table behavior:
+SET SESSION old_alter_table=1;
+
+Execute ALTER IGNORE:
+ALTER IGNORE 
+TABLE Employee.tbl_DuplicateEmployee_VarcharDatatype
+ADD UNIQUE INDEX idx_tbl_DuplicateEmployee_VarcharDatatype
+(EmpID,EmpName);
+
+Find result:
+SELECT *FROM 
+Employee.tbl_DuplicateEmployee_VarcharDatatype;
+
+MySQL Alter Ignore Statement
+
+As you can see in the above result, all duplicate records removed.
+
+If your column has a BLOB data type, you cannot directly insert any unique key constraint on it.
+If you have a BLOB data type column like TEXT, so temporary, you have to create one MD5 column and use this MD5 column in ALTER IGNORE.
+
+Below is a demonstration for deleting BLOB duplicate records.
+
+First, create a demo table and data for TEXT datatype:
+CREATE TABLE Employee.tbl_DuplicateEmployee_BLOBDataType
+(
+     EmpID INTEGER
+    ,EmpName TEXT
+);
+ 
+INSERT INTO Employee.tbl_DuplicateEmployee_BLOBDataType 
+VALUES
+(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR')
+,(1,'ABC'),(2,'XYZ'),(3,'PQR');
+
+Create MD5 column for EmpID(Integer) + EmpName(Text):
+ALTER TABLE Employee.tbl_DuplicateEmployee_BLOBDataType ADD MD5Column VARCHAR(50);
+ 
+UPDATE Employee.tbl_DuplicateEmployee_BLOBDataType 
+SET MD5Column = MD5(CONCAT(EmpID,EmpName));
+
+Execute ALTER IGNORE: 
+ALTER IGNORE TABLE Employee.tbl_DuplicateEmployee_BLOBDataType ADD UNIQUE INDEX idx_tbl_DuplicateEmployee_BLOBDataType(MD5Column);
+
+Now check the result:
+SELECT *FROM 
+Employee.tbl_DuplicateEmployee_BLOBDataType;
+
+Remove MD5 column:
+ALTER TABLE Employee.tbl_DuplicateEmployee_BLOBDataType DROP COLUMN MD5Column;

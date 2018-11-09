@@ -1,0 +1,25 @@
+In this post, I am sharing the different parameters to enable logging for General and Long running queries in MySQL.
+
+Using shared approach, you don’t require to restart your MySQL Server. You can easily configure this log parameter, and you can see the output in Log table.
+
+As a Database Administrator, it is our responsibility to log the all different kinds of queries because the log is our primary requirement for any troubleshooting.
+
+First check the current status of the different Log Parameters:
+
+SHOW VARIABLES LIKE '%log%';
+
+Using above statement, you can check the current value of log parameter.
+
+Now enable logging for general query and save the output into “mysql.general_log” table:
+SET GLOBAL log_output = 'TABLE';
+SET GLOBAL general_log = 'ON';
+SELECT *FROM mysql.general_log;
+
+Now enable logging for long running queries:
+SET GLOBAL slow_query_log = 1;
+SET GLOBAL long_query_time= 1;
+SET GLOBAL log_queries_not_using_indexes= ON;
+
+Sometimes, it is required to execute the FLUSH command of the log to get immediate updates into the Log Table.
+
+FLUSH LOGS;

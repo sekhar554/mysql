@@ -1,0 +1,33 @@
+Sometimes, it requires changing the default character set of MySQL Server or MySQL Database.
+A Character set “latin1” and Collation “latin1_swedish_ci” are the default of MySQL Server.
+
+This is a standard configuration, and you do not need to change anything, but if your application requires storing data using a different character set, you have to change this default configuration.
+
+Here, I am showing how to change your default character set and collation to UTF-8.
+
+MySQL Server provides, different three ways to configure character set and collation.
+
+Configure Character set and Collation at Database Level.
+Configure Character set and Collation at Server Startup.
+Configure Character set and Collation during MySQL Server Installation and Configuration.
+First, check your default Character Set and Collation of MySQL Server.
+
+SHOW VARIABLES LIKE 'chara%'; 
+SHOW VARIABLES LIKE 'collation%';
+
+If you want to change the default to UTF-8, you want to add the following to my.cnf (MySQL Configuration File).
+[client]
+default-character-set=utf8
+ 
+[mysql]
+default-character-set=utf8
+ 
+[mysqld]
+collation-server = utf8_unicode_ci
+init-connect='SET NAMES utf8'
+character-set-server = utf8
+
+Specify Character Settings per Database:
+CREATE DATABASE MyDatabase
+DEFAULT CHARACTER SET utf8
+DEFAULT COLLATE utf8_general_ci;

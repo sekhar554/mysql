@@ -1,0 +1,22 @@
+Enable SQL Profile at session level:
+
+SET profiling=1;
+
+Execute sample query:
+SELECT *FROM table_one;
+SELECT *FROM table_two;
+
+Check the execution time for each query:
+SHOW PROFILES;
+ 
+/*Result*/
+Query_ID   Duration    Query
+--------------------------------------------------
+1          0.00355325  SELECT *FROM table_one
+2          0.00051850  SELECT *FROM table_two
+
+Check the execution time for second query only:
+SHOW PROFILE FOR QUERY 2;
+
+Check the CPU information for second query only:
+SHOW PROFILE CPU FOR QUERY 2;
