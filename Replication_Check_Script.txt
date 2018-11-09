@@ -1,0 +1,47 @@
+#####REPLICATION CHECK SCRIPT#####
+
+USER=root
+PASSWORD=ref0cl39
+HOST=10.64.10.136
+
+MEMORYUSED=$(free | grep Mem | awk '{print $3/$2 * 100.0}')
+MEM=$(roundit $MEMORYUSED 0) 
+SLAVEIO=$(mysql -u$USER -p$PASSWORD -h$HOST -e"show slave status\G;" | grep 'Slave_IO_Running' | awk '{print $2}')
+SLAVESQL=$(mysql -u$USER -p$PASSWORD -h$HOST -e"show slave status\G;" | grep 'Slave_SQL_Running' | awk '{print $2}')
+SBM=$( mysql -u$USER -p$PASSWORD -h$HOST -e"show slave status\G;" | grep 'Seconds_Behind_Master' | awk '{print $2}')
+
+
+## Check MEMORY USAGE##
+if [ "$MEM" -ge 95 ]
+then
+echo " Memory Usage is high "
+else    
+echo " It appears $MEM% of the RAM is in use."
+fi
+
+#Check SLAVEIO
+
+if [ "$SLAVEIO" != "Yes" ]
+then
+echo "MYSQL SLAVE IO is not running"
+else
+echo "MySQL SLAVE IO RUNNING:$SLAVEIO"
+fi
+
+#Check SLAVESQL
+
+if [ "$SLAVESQL" != "Yes" ]
+then
+echo "MySQL SLAVE SQL is not running"
+else
+echo "MySQL SLAVE SQL RUNNING:$SLAVESQL"
+fi
+
+#Check Seconds_Behind_Master
+
+if [ "$SBM" -gt 100 ]
+then
+echo "Slave is atleast 100 seconds behind the master"
+else
+echo "Seconds Behinds Master is:$SBM "
+fi

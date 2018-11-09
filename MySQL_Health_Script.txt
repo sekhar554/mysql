@@ -1,0 +1,91 @@
+#!/bin/bash
+
+USER=
+PASSWORD=
+HOST=
+
+EMAIL="ajeet.verma@hungama.com"
+SERVER=$(hostname)
+MEMORYUSED=$(free | grep Mem | awk '{print $3/$2 * 100.0}')
+MEM=$(roundit $MEMORYUSED 0) 
+CPUUSAGE=$(top -bn1 | awk '/Cpu/ { cpu = 100 - $8 }; END { print cpu }')
+CPU=$(roundit $CPUUSAGE 0)
+UPTIME=$(mysql -u$USER -p$PASSWORD -h$HOST  -e "show global status like 'uptime'" | grep "Value" | awk '{ print $2 }')
+ABORTED=$(mysql -u$USER -p$PASSWORD -h$HOST  -e "show global status like 'Aborted_connects'" | grep "Value" | awk '{ print $2 }')
+THREADS=$(mysql -u$USER -p$PASSWORD -h$HOST  -e "show global status like 'Threads_connected'" | grep "Value" | awk '{ print $2 }')
+SLEEP_TIME=$(mysql -u$USER -p$PASSWORD -h$HOST  -e "SHOW PROCESSLIST" | grep "Time" | awk '{ print $6 }')
+IO_IS_RUNNING=$(mysql -u$USER -p$PASSWORD -h$HOST -e "SHOW SLAVE STATUS\G" | grep "Slave_IO_Running" | awk '{ print $2 }')
+SQL_IS_RUNNING=$(mysql -u$USER -p$PASSWORD -h$HOST -e "SHOW SLAVE STATUS\G" | grep "Slave_SQL_Running" | awk '{ print $2 }')
+SECONDS_BEHIND_MASTER=$(mysql -u$USER -p$PASSWORD -h$HOST -e "SHOW SLAVE STATUS\G"| grep "Seconds_Behind_Master" | awk '{ print $2 }')
+ERRORS=()
+
+## Check MEMORY USAGE##
+if [ "$MEM" -ge 95 ]
+then
+    ERRORS=("${ERRORS[@]}" " It appears $MEM% of the RAM is in use.")
+fi
+
+
+## Check CPU USAGE##
+if [ "$CPU" -ge 95 ]
+then
+    ERRORS=("${ERRORS[@]}" " It appears $CPUUSAGE% of the CPU is utilized.")
+fi
+
+
+## Check Uptime##
+if [ "$UPTIME" -lt 86400 ]
+then
+    ERRORS=("${ERRORS[@]}" " The mysqld process was restarted in the past 24 hours and has been up (Value)")
+fi
+
+
+## Check Threads Connected ##
+if [ "$THREADS" -gt 500 ]
+then
+    ERRORS=("${ERRORS[@]}" " Threads connected (Value)")
+fi
+
+
+## Check Aborted Connects ##
+if [ "$ABORTED" -gt 1500 ]
+then
+    ERRORS=("${ERRORS[@]}" " Aborted connects (Value)")
+fi
+
+
+## Check Processlist ##
+if [ "$SLEEP_TIME" -gt 200 ]
+then
+    ERRORS=("${ERRORS[@]}" " User in sleep morethan given time (Time)")
+fi
+
+
+## Check if IO thread is running ##
+if [ "$IO_IS_RUNNING" != "Yes" ]
+then
+    ERRORS=("${ERRORS[@]}" "I/O thread is not running (Slave_IO_Running)")
+fi
+
+
+## Check for SQL thread ##
+if [ "$SQL_IS_RUNNING" != "Yes" ]
+then
+    ERRORS=("${ERRORS[@]}" "SQL thread is not running (Slave_SQL_Running)")
+fi
+
+
+## Check how lag the slave is ##
+if [ "$SECONDS_BEHIND_MASTER" -gt 100 ]
+then
+    ERRORS=("${ERRORS[@]}" "The Slave is at least 100 seconds behind the master (Seconds_Behind_Master)")
+fi
+
+
+### Send and Email if there is an error ###
+if [ "${#ERRORS[@]}" -gt 0 ]
+then
+    MESSAGE="An error has been detected on ${SERVER} involving the mysql. Below is a list of the reported:\n\n
+    $(for i in $(seq 1 ${#ERRORS[@]}) ; do echo "\t${ERRORS[$i]}\n" ; done)"
+    echo -e $MESSAGE | mail -s "Mysql Health for $SERVER is reporting" ${EMAIL}
+fi
