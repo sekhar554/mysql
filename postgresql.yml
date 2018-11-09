@@ -1,0 +1,31 @@
+---
+- hosts: test-servers
+  become: yes
+
+  tasks:
+
+    - name: Install repo for PostgreSQL 9.6
+      yum:
+        name: https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-6-x86_64/pgdg-centos96-9.6-3.noarch.rpm
+        state: present
+
+    - name: Install PostgreSQL version 9.6
+      yum:
+        name: "{{ item }}"
+        state: latest
+      with_items:
+        - postgresql96-server
+        - postgresql96-contrib
+
+    - name: Initialize the PostgreSQL Database
+      command: /usr/pgsql-9.6/bin/postgresql96-setup initdb  
+
+    - name: Set PostgreSQL INIT status and start
+      service: name=postgresql-9.6 state=started enabled=yes
+
+    - name: Configure Firewalld PostgreSQL
+      command: firewall-cmd --permanent --zone=public --add-service=postgresql
+    
+    - name: Configure Reload Firewalld Services
+      command: firewall-cmd --reload 
+

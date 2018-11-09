@@ -1,0 +1,43 @@
+#For PostgreSQL Slave Replication Setup 
+---
+- hosts: test-servers
+  become: yes
+
+  tasks:
+    - service:
+        name: postgresql-9.6
+        state: stopped
+
+    - file:
+       path: /var/lib/pgsql/9.6/data/
+       state: absent
+
+    - file:
+       path:  /var/lib/pgsql/9.6/data/
+       owner: postgres
+       group: postgres
+       mode:  0700
+       state: directory
+
+- hosts: test-servers
+
+  tasks:
+    - name: execute base backup
+      shell: export PGPASSWORD=cisco123 && /usr/pgsql-9.6/bin/pg_basebackup -h pg1 -U repuser -D /var/lib/pgsql/9.6/data -P -v --xlog-method=stream 2>&1
+
+    - name: add new configuration "recovery.conf"
+      blockinfile:
+        create: yes
+        dest: /var/lib/pgsql/9.6/data/recovery.conf
+        block: |
+          standby_mode = 'on'
+          primary_conninfo = 'user=repuser password=cisco123 host={{ master }} port=5432 sslmode=prefer'
+          recovery_target_timeline = 'latest'
+
+- hosts: test-servers
+  become: yes
+
+  tasks:
+    - service:
+        name: postgresql-9.6
+        state: started

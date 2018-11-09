@@ -1,0 +1,71 @@
+#For PostgreSQL Master Replication Setup 
+---
+- hosts: test-servers
+  become: yes
+
+  tasks:
+    - name: create data cluster
+      command: /usr/pgsql-9.6/bin/postgresql96-setup initdb
+
+    - service:
+        name: postgresql-9.6
+        state: started
+
+- hosts: test-servers
+  
+  tasks:
+    - name: create ROLE replicant
+      postgresql_user:
+        db: postgres
+        login_unix_socket: /tmp
+        name: repuser
+        password: cisco123
+        role_attr_flags: LOGIN,REPLICATION
+
+    - name: add new configuration to "postgresql.conf"
+      blockinfile:
+        dest: /var/lib/pgsql/9.4/data/postgresql.conf
+        block: |
+          include 'server.conf'
+
+    - name: add new configuration to "server.conf"
+      blockinfile:
+        create: yes
+        dest: /var/lib/pgsql/9.4/data/server.conf
+        block: |
+          listen_addresses = '*'
+          wal_level = hot_standby
+          synchronous_commit = local
+          archive_mode = on
+          archive_command = 'cp %p /var/lib/pgsql/9.6/archive/%f'
+          max_wal_senders = 2
+          wal_keep_segments = 10
+          hot_standby = on
+
+    - name: add new configuration to "pg_hba.conf"
+      blockinfile:
+        dest: /var/lib/pgsql/9.4/data/pg_hba.conf
+        block: |
+          host    replication     repuser       127.0.0.1/32              md5
+          host    replication     repuser       192.168.1.245/32          md5
+          host    replication     repuser       192.168.1.246/32          md5
+          host    process-engine  camunda       192.168.1.0/24            md5
+          host    kong            kong          192.168.1.0/24            md5
+
+    - name: update environment variables in UNIX account postgres
+      blockinfile:
+        create: yes
+        dest: /var/lib/pgsql/.pgsql_profile
+        block: |
+          export PGHOST=/tmp PAGER=less PGDATA=/var/lib/pgsql/9.6/data
+
+- hosts: test-servers
+  become: yes
+
+  tasks:
+    - service:
+        name: postgresql-9.6
+        state: restarted
+
+    - name: configure init for startup on bootup
+      shell: chkconfig --level 2345 postgresql-9.6 on

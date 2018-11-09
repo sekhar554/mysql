@@ -1,0 +1,425 @@
+version: "2"
+services:
+  postgresdb:
+    image: postgres:9.6
+    container_name: postgresdb
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=kong
+      - POSTGRES_PASSWORD=cisco123
+      - POSTGRES_DB=kong
+      - CAMUNDA_USER=camunda
+      - CAMUNDA_PASSWORD=cisco123
+      - CAMUNDA_DB=process-engine
+    volumes:
+      - ./server/postgres/init:/docker-entrypoint-initdb.d
+      - "db-data-kong-postgres:/var/lib/postgresql/data"
+    networks:
+      database:
+        aliases:
+          - postgresserver
+
+  camunda:
+    image: camunda/camunda-bpm-platform:7.8.0
+    build:
+       context: ./docker/camunda
+       args:
+          - camunda_version=7.8.0
+    container_name: camunda
+    ports:
+      - "8080:8080"
+      # Debug port
+      #- "9080:9080"
+    environment:
+      - DB_DRIVER=org.postgresql.Driver
+      - DB_URL=jdbc:postgresql://postgresdb:5432/process-engine
+      - DB_USERNAME=camunda
+      - DB_PASSWORD=cisco123
+    volumes:
+        - ./server/camunda/conf/bpm-platform.xml:/camunda/conf/bpm-platform.xml
+        - ./server/camunda/conf/bap-auth-config.properties:/camunda/lib/bap-auth-config.properties
+        - ./server/camunda/lib/bap-camunda-auth-1.0-SNAPSHOT.jar:/camunda/lib/bap-camunda-auth-1.0-SNAPSHOT.jar
+        - ./server/camunda/osupgrade-workflow:/camunda/webapps/osupgrade-workflow
+        - ./server/camunda/nsosubworkflows:/camunda/webapps/nsosubworkflows
+        - ./server/camunda/migration-workflow:/camunda/webapps/migration-workflow
+        - ./server/camunda/vlandemo:/camunda/webapps/vlandemo
+        - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+        # Uncomment below and debug port above for remote debugging
+        # - ./server/camunda/bin/configure-and-run.sh:/usr/local/bin/configure-and-run.sh
+        # - ./server/camunda/bin/setenv.sh:/camunda/bin/setenv.sh
+   # command: ["/wait-for-it.sh", "-t", "45", "postgresdb:5432", "--" , "./camunda.sh"]
+    command: ["/wait-for-it.sh", "-t", "45", "postgresdb:5432", "--" , "/usr/local/bin/configure-and-run.sh"]
+    depends_on:
+      - postgresdb
+      - kong
+    networks:
+      - backend-services
+      - database
+
+  mongodb:
+    image: 'mongo:3.4.10'
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - 'mongodb_data:/data/db'
+      - ./server/mongo/init/:/docker-entrypoint-initdb.d/
+      - ./server/mongo/config:/data/configdb
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=cisco123
+      - BAP_USER=svcuser
+      - BAP_PASSWORD=cisco123
+    networks:
+      database:
+        aliases:
+          - mongoserver
+
+  dbinit:
+    image: kong:0.11.2
+    container_name: dbinit
+    depends_on:
+      - postgresdb
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=postgresdb
+      - KONG_PG_DATABASE=kong
+      - KONG_PG_USER=kong
+      - KONG_PG_PASSWORD=cisco123
+      #- LUA_PATH=/kong-plugin/?.lua;/kong-plugin/?/init.lua;;
+      #- KONG_CUSTOM_PLUGINS=bap-auth-plugin,bap-jwt-plugin,bap-aclgroups-plugin,bap-jwt-upstream,bap-acl-plugin
+    depends_on:
+      - postgresdb
+    volumes:
+        - ./kong-plugin:/kong-plugin
+        - ./kong-plugin/kong.conf.bap:/etc/kong/kong.conf
+        - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+        - ./kong-plugin/kong-migration-startup.sh:/kong-migration-startup.sh
+    command: ["./wait-for-it.sh", "-t", "45", "postgresdb:5432", "--" , "./kong-migration-startup.sh"]
+    networks:
+      - database
+
+  kong:
+    image: kong:0.11.2
+    container_name: kong
+    depends_on:
+      - postgresdb
+      - dbinit
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=postgresdb
+      - KONG_PG_DATABASE=kong
+      - KONG_PG_USER=kong
+      - KONG_PG_PASSWORD=cisco123
+      - KONG_LOG_LEVEL=debug
+      #- KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      #- KONG_ADMIN_ERROR_LOG=/dev/stdout
+      #- KONG_PROXY_ACCESS_LOG=/dev/stdout
+      #- KONG_PROXY_ERROR_LOG=/dev/stdout
+      #- LUA_PATH=/kong-plugin/?.lua;/kong-plugin/?/init.lua;;
+      #- KONG_CUSTOM_PLUGINS=bap-auth-plugin,bap-jwt-plugin,bap-aclgroups-plugin,bap-jwt-upstream,bap-acl-plugin
+    expose:
+      - 8000
+      - 8001
+      - 8443
+      - 8444
+    volumes:
+        - ./kong-plugin:/kong-plugin
+        - ./build/container/conf/kong/kong.conf:/etc/kong/kong.conf:ro
+        - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+        - ./kong-plugin/kong-start-up.sh:/kong-start-up.sh
+        - ./kong-plugin/kong-custom/dao.lua:/usr/local/share/lua/5.1/kong/dao/dao.lua
+        - ./build/container/conf/certs:/etc/ssl/private:ro
+    ports:
+      - 8000:8000
+      - 8001:8001
+      - 8447:8443
+      - 8444:8444
+    command:
+       - /bin/bash
+       - -c
+       - |
+          ./wait-for-it.sh -t 90 postgresdb:5432 -- sleep 10
+          ./kong-start-up.sh
+    networks:
+      - frontend
+      - backend-services
+      - database
+
+  konga:
+    image: "pantsel/konga:latest"
+    container_name: konga
+    restart: always
+    environment:
+      - NODE_ENV=development
+      - KONG_ADMIN_URL=http://kong:8001
+    depends_on:
+      - kong
+    ports:
+      - 1337:1337
+    networks:
+      - backend-services
+
+  core-services:
+    image: "node:8.9.1"
+    container_name: core-services
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=production
+      - MAX_HEAP_SIZE=2048
+      - MAX_WORKERS=5
+    volumes:
+      - ./microservices/core:/home/node/app
+      - ./microservices/common:/home/node/common
+      - ./build:/home/node/build
+      - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+    ports:
+      - 9100:9100
+      - 9101:9101
+    depends_on:
+      - mongodb
+      - kong
+    networks:
+      - backend-services
+      - database
+    command:
+       - /bin/bash
+       - -c
+       - |
+          /wait-for-it.sh -t 45 kong:8001 -- /home/node/build/scripts/create_auth.sh kong
+          npm start
+
+  osupgrade-ms:
+    image: "node:8.9.1"
+    container_name: osupgrade-ms
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=production
+      - MAX_HEAP_SIZE=2048
+      - MAX_WORKERS=5
+    volumes:
+      - ./microservices/osupgrade-ms:/home/node/app
+      - ./microservices/common:/home/node/common
+      - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+    ports:
+      - 9200:9200
+      - 9500:9500
+    command:
+       - /bin/bash
+       - -c
+       - |
+          /wait-for-it.sh -t 60 core-services:9100
+          npm start
+    depends_on:
+      - mongodb
+    networks:
+      - backend-services
+      - database
+
+  deviceOnBoard:
+    image: "node:8.9.1"
+    container_name: deviceOnBoard
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=production
+      - PORT=9410
+    volumes:
+      - ./microservices/onboard_device:/home/node/app
+      - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+    ports:
+      - 9410:9410
+    command:
+       - /bin/bash
+       - -c
+       - |
+          /wait-for-it.sh -t 60 core-services:9100
+          npm start
+    depends_on:
+      - core-services
+    networks:
+      - backend-services
+      - database
+
+
+
+  auth-service:
+    image: "node:8.9.1"
+    container_name: auth-service
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=production
+      - MAX_HEAP_SIZE=2048
+      - MAX_WORKERS=2
+    volumes:
+      - ./microservices/auth:/home/node/app
+      - ./microservices/common:/home/node/common
+      - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+      - ./build/container/conf/certs/ldapcert.pem:/home/node/app/config/ldapcert.pem
+
+    ports:
+      - 9102:9102
+    command:
+       - /bin/bash
+       - -c
+       - |
+        /wait-for-it.sh -t 180 kong:8000 -- sleep 10
+        echo "Starting authentication service ..."
+        npm start
+    depends_on:
+      - "postgresdb"
+    networks:
+      - backend-services
+      - database
+
+  portal:
+    container_name: portal
+    image: nginx:1.13-alpine
+    ports:
+      - "8082:8082"
+      - "80:80"
+    volumes:
+      - ./build/container/conf/certs:/etc/ssl/private:ro
+      - ./dist/:/usr/share/nginx/html/
+      - ./build/conf/portal/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - frontend
+
+#  elk:
+#    image: sebp/elk
+#    environment:
+#      - ES_CONNECT_RETRY=60
+#    ports:
+#      - "5601:5601"
+#      - "5044:5044"
+#    volumes:
+#      - 'elk_data:/var/lib/elasticsearch'
+#      - ./build/container/conf/elk/logstash.yml:/opt/logstash/config/logstash.yml
+#      - ./build/container/conf/elk/patterns.txt:/opt/logstash/patterns/pattern
+#      - ./build/container/conf/elk/logstash_filter.conf:/etc/logstash/conf.d/12-some-filter.conf
+#      - ./build/container/conf/elk/logstash-input.conf:/etc/logstash/conf.d/02-beats-input.conf
+#      - ./build/container/conf/elk/logstash-output.conf:/etc/logstash/conf.d/30-output.conf
+#    networks:
+#      - backend-services
+#  logspout:
+#    image: bekt/logspout-logstash
+#    environment:
+#      ROUTE_URIS: 'logstash://elk:5044'
+#    volumes:
+#      - /var/run/docker.sock:/var/run/docker.sock
+#    links:
+#      - elk
+#    restart: on-failure
+#    networks:
+#      - backend-services
+
+#  portainer:
+#    image: "portainer/portainer"
+#    container_name: portainer
+#    volumes:
+#      - '/var/run/docker.sock:/var/run/docker.sock'
+#      - 'portainer_data:/data'
+#    ports:
+#      - "9500:9000"
+
+  bpa-ramp:
+    image: "node:8.9.1"
+    container_name: bpa-ramp
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./microservices/bpa:/home/node/app
+      - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+    ports:
+      - 9400:9400
+    command:
+       - /bin/bash
+       - -c
+       - |
+          /wait-for-it.sh -t 60 core-services:9100
+          npm start
+    depends_on:
+      - core-services
+    networks:
+      - backend-services
+      - database
+
+#(??)  granite-ms:
+#    image: "node:8.9.1"
+#(??)    container_name: granite-ms
+#    user: "node"
+#    working_dir: /home/node/app
+#    environment:
+#      - NODE_ENV=production
+#    volumes:
+#(??)      - ./microservices/granite-ms:/home/node/app
+#    ports:
+#      - 9103:9103
+#    command: "npm start"
+#    depends_on:
+#      - "postgresdb"
+#    networks:
+#      - backend-services
+#      - database
+
+#  migration-service:
+#    image: "node:8.9.1"
+#    container_name: migration-service
+#    user: "node"
+#    working_dir: /home/node/app
+#    environment:
+#      - NODE_ENV=production
+#    volumes:
+#      - ./microservices/migration:/home/node/app
+#    ports:
+#      - 9103:9103
+#    command: "npm start"
+#    depends_on:
+#      - "postgresdb"
+#    networks:
+#      - backend-services
+#      - database
+
+  migration-service:
+    image: "node:8.9.1"
+    container_name: migration-service
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./microservices/topology_mapping:/home/node/app
+      - ./kong-plugin/wait-for-it.sh:/wait-for-it.sh
+    ports:
+      - 9103:9103
+    command:
+      - /bin/bash
+      - -c
+      - |
+          /wait-for-it.sh -t 90 core-services:9100
+          npm start
+    depends_on:
+      - "mongodb"
+    networks:
+      - backend-services
+      - database
+
+networks:
+  frontend:
+  backend-services:
+#    driver: overlay
+  database:
+#    driver: overlay
+
+volumes:
+  db-data-kong-postgres:
+  mongodb_data:
+    driver: local
+  #elk_data:
+  #portainer_data:
